@@ -414,9 +414,8 @@ export default function App() {
             background: "linear-gradient(135deg, #fef3c7 20%, #f59e0b 60%, #ef4444 100%)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>
-            TRACK<br />BATTLE
+            TRANCEOFF
           </h1>
-          <p style={{ color: "#57534e", marginTop: 12, fontSize: 13, letterSpacing: 1 }}>Upload. Vote. Be remembered.</p>
         </header>
 
         {/* Countdown + Identity bar */}
