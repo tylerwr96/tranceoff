@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
+import { supabase } from './supabase'
+
 const WEEK_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getWeekKey(date = new Date()) {
