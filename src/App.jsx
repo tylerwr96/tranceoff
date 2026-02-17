@@ -214,9 +214,56 @@ export default function App() {
     return () => clearInterval(t);
   }, [currentWeek]);
 
+  useEffect(() => {
+    fetchTracks()
+  }, [])
+
+  const fetchTracks = async () => {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('*')
+      .eq('week', currentWeek)
+      .order('votes', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching tracks:', error)
+    } else {
+      setTracks(data)
+    }
+  }
+
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSetUserName = async (name) => {
+    if (!name.trim()) return
+    setUserName(name.trim())
+
+    // Check if this user already voted this week
+    const { data } = await supabase
+      .from('votes')
+      .select('id')
+      .eq('user_name', name.trim())
+      .eq('week', currentWeek)
+      .limit(1)
+
+    if (data && data.length > 0) {
+      setVotedThisWeek(true)
+    }
+
+    // Check if this user already submitted this week
+    const { data: trackData } = await supabase
+      .from('tracks')
+      .select('id')
+      .eq('user_name', name.trim())
+      .eq('week', currentWeek)
+      .limit(1)
+
+    if (trackData && trackData.length > 0) {
+      setHasUploadedThisWeek(true)
+    }
   };
 
   const handleFileChange = (e) => {
@@ -227,25 +274,85 @@ export default function App() {
     setAudioURL(URL.createObjectURL(file));
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!userName.trim()) { showToast("Set your display name first.", "error"); return; }
     if (!trackName.trim()) { showToast("Enter a track name.", "error"); return; }
-    if (!audioURL) { showToast("Select an audio file.", "error"); return; }
-    setTracks((prev) => [...prev, {
-      id: `t_${Date.now()}`, userId: "user_me",
-      userName, trackName, votes: 0, week: currentWeek,
-    }]);
-    setHasUploadedThisWeek(true);
-    setTrackName(""); setAudioFile(null); setAudioURL(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    showToast("Track submitted! Good luck 🎵");
+    if (!audioFile) { showToast("Select an audio file.", "error"); return; }
+
+    // Upload the audio file to Supabase Storage
+    const fileName = `${currentWeek}_${userName}_${Date.now()}.${audioFile.name.split('.').pop()}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('audio')
+      .upload(fileName, audioFile)
+
+    if (uploadError) {
+      showToast("File upload failed. Try again.", "error")
+      console.error(uploadError)
+      return
+    }
+
+    // Get the public URL for the uploaded file
+    const { data: urlData } = supabase.storage
+      .from('audio')
+      .getPublicUrl(fileName)
+
+    // Save the track with the audio URL
+    const { error } = await supabase
+      .from('tracks')
+      .insert({
+        track_name: trackName,
+        user_name: userName,
+        week: currentWeek,
+        votes: 0,
+        audio_url: urlData.publicUrl,
+      })
+
+    if (error) {
+      showToast("Something went wrong. Try again.", "error")
+      return
+    }
+
+    setHasUploadedThisWeek(true)
+    setTrackName("")
+    setAudioFile(null)
+    setAudioURL(null)
+    showToast("Track submitted! Good luck 🎵")
+    fetchTracks()
   };
 
-  const handleVote = (trackId) => {
-    if (votedThisWeek) return;
-    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, votes: t.votes + 1 } : t));
-    setVotedThisWeek(true);
-    showToast("Vote cast! ♪");
+  const handleVote = async (trackId) => {
+    if (votedThisWeek) return
+
+    // Record the vote in the votes table
+    const { error: voteError } = await supabase
+      .from('votes')
+      .insert({
+        track_id: trackId,
+        user_name: userName,
+        week: currentWeek,
+      })
+
+    if (voteError) {
+      showToast("Something went wrong. Try again.", "error")
+      console.error(voteError)
+      return
+    }
+
+    // Increment the vote count on the track
+    const { error: trackError } = await supabase
+      .from('tracks')
+      .update({ votes: tracks.find(t => t.id === trackId).votes + 1 })
+      .eq('id', trackId)
+
+    if (trackError) {
+      console.error(trackError)
+      return
+    }
+
+    setVotedThisWeek(true)
+    showToast("Vote cast! ♪")
+    fetchTracks()
   };
 
   const archiveWeeks = Object.keys(DEMO_TRACKS).sort((a, b) => b.localeCompare(a));
@@ -330,7 +437,7 @@ export default function App() {
                 value={userNameInput}
                 onChange={(e) => setUserNameInput(e.target.value)}
                 placeholder="Your display name"
-                onKeyDown={(e) => { if (e.key === "Enter" && userNameInput.trim()) setUserName(userNameInput.trim()); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSetUserName(userNameInput) }}
                 style={{
                   background: "rgba(255,255,255,0.04)", border: "1px solid rgba(245,158,11,0.25)",
                   borderRadius: 8, padding: "9px 14px", color: "#fef3c7",
@@ -338,7 +445,7 @@ export default function App() {
                 }}
               />
               <button
-                onClick={() => { if (userNameInput.trim()) setUserName(userNameInput.trim()); }}
+                onClick={() => handleSetUserName(userNameInput)}
                 style={{
                   background: "#f59e0b", color: "#1a1208", border: "none",
                   borderRadius: 8, padding: "9px 16px", cursor: "pointer",
