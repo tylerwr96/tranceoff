@@ -314,7 +314,7 @@ export default function App() {
     }
 
     setHasUploadedThisWeek(true)
-    setTrackName("")
+    setTrackName("trackName")
     setAudioFile(null)
     setAudioURL(null)
     showToast("Track submitted! Good luck 🎵")
